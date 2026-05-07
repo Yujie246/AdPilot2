@@ -902,6 +902,14 @@ button {
   border-color: rgba(255, 202, 86, 0.56);
 }
 
+.analysis-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 17px auto 26px;
+}
+
 .analysis-button {
   display: flex;
   align-items: center;
@@ -909,7 +917,7 @@ button {
   gap: 11px;
   width: min(250px, 72%);
   height: 46px;
-  margin: 17px auto 26px;
+  margin: 0;
   color: #181008;
   font-size: 16px;
   font-weight: 720;
@@ -926,6 +934,13 @@ button {
   cursor: not-allowed;
   filter: grayscale(0.2);
   opacity: 0.78;
+}
+
+.analysis-wait-hint {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  font-weight: 520;
+  white-space: nowrap;
 }
 
 .analysis-result {
@@ -3795,7 +3810,16 @@ button {
   .analysis-button {
     width: min(100%, 290px);
     height: 48px;
+  }
+
+  .analysis-action-row {
+    flex-direction: column;
+    gap: 8px;
     margin: 18px auto 22px;
+  }
+
+  .analysis-wait-hint {
+    font-size: 12px;
   }
 
   .analysis-result {

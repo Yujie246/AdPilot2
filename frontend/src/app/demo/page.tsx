@@ -248,10 +248,13 @@ export default function DemoPage() {
               <span>广告品牌 / 主题</span>
               <input onChange={(event) => handleBrandChange(event.target.value)} placeholder="如：金典有机奶" value={brand} />
             </label>
-            <button className="analysis-button" disabled={!canAnalyze} onClick={startAnalysis} type="button">
-              <Sparkles size={20} strokeWidth={1.8} />
-              {status === "analyzing" ? "AI 分析中" : "开始分析"}
-            </button>
+            <div className="analysis-action-row">
+              <button className="analysis-button" disabled={!canAnalyze} onClick={startAnalysis} type="button">
+                <Sparkles size={20} strokeWidth={1.8} />
+                {status === "analyzing" ? "AI 分析中" : "开始分析"}
+              </button>
+              {status === "analyzing" ? <span className="analysis-wait-hint">预计等待60s～120s</span> : null}
+            </div>
 
             <div className="analysis-result">
               <div className="analysis-result-title">
