@@ -56,17 +56,24 @@ const DEMO_STORE_NAME = "uploads";
 const DEMO_BRAND_KEY = "adpilot-demo-brand";
 const memoryUploads: Partial<Record<DemoAssetKind, StoredAsset>> = {};
 
-const defaultDemoAssets: Record<DemoAssetKind, { fileName: string; label: string; path: string; type: string }> = {
+const defaultDemoAssets: Record<
+  DemoAssetKind,
+  { duration: string; fileName: string; label: string; path: string; size: string; type: string }
+> = {
   drama: {
+    duration: "8:41",
     fileName: "电视剧测试视频.mp4",
-    label: "测试视频",
+    label: "已选默认测试视频",
     path: "/assets/电视剧测试视频.mp4",
+    size: "84.1 MB",
     type: "video/mp4"
   },
   adVideo: {
+    duration: "0:18",
     fileName: "广告测试视频.mp4",
-    label: "测试广告",
+    label: "已选默认测试广告",
     path: "/assets/广告测试视频.mp4",
+    size: "19.4 MB",
     type: "video/mp4"
   }
 };
@@ -115,6 +122,9 @@ export default function DemoPage() {
 
     const storedBrand = window.localStorage.getItem(DEMO_BRAND_KEY);
     if (storedBrand) setBrand(storedBrand);
+
+    setDrama((prev) => prev ?? createDefaultAsset("drama"));
+    setAdVideo((prev) => prev ?? createDefaultAsset("adVideo"));
 
     async function restoreUploads() {
       const [storedDrama, storedAdVideo] = await Promise.all([
@@ -332,6 +342,9 @@ function UploadRow({
   tag: string;
 }) {
   const inputId = useMemo(() => `upload-${label}-${Math.random().toString(36).slice(2)}`, [label]);
+  const tagClassName =
+    asset?.source === "upload" ? "asset-tag custom" : asset?.source === "default" ? "asset-tag default" : "asset-tag";
+
   return (
     <label className={asset ? "asset-row uploaded" : "asset-row"} htmlFor={inputId}>
       <input accept={accept} id={inputId} onChange={(event) => onChange(event.target.files?.[0] ?? null)} type="file" />
@@ -342,7 +355,7 @@ function UploadRow({
         <strong>{asset ? asset.file.name : label}</strong>
         <small>{asset ? `${asset.duration} · ${asset.size}` : `${placeholder}${optional ? "（可选）" : ""}`}</small>
       </div>
-      <span className={asset?.source === "upload" ? "asset-tag custom" : "asset-tag"}>{tag}</span>
+      <span className={tagClassName}>{tag}</span>
       {asset ? (
         <Check className="asset-status-icon" size={25} strokeWidth={1.7} />
       ) : (
@@ -824,7 +837,7 @@ function MediaControls({
               onClick={onToggleAdFastForward}
               type="button"
             >
-              3X
+              开3x
             </button>
           ) : null}
         </div>
@@ -849,21 +862,25 @@ async function buildAsset(file: File): Promise<UploadedAsset> {
   };
 }
 
+function createDefaultAsset(kind: DemoAssetKind): UploadedAsset {
+  const config = defaultDemoAssets[kind];
+  const file = new File([], config.fileName, {
+    type: config.type,
+    lastModified: Date.now()
+  });
+
+  return {
+    file,
+    url: config.path,
+    duration: config.duration,
+    size: config.size,
+    source: "default"
+  };
+}
+
 async function loadDefaultAsset(kind: DemoAssetKind): Promise<UploadedAsset | null> {
   try {
-    const config = defaultDemoAssets[kind];
-    const file = new File([], config.fileName, {
-      type: config.type,
-      lastModified: Date.now()
-    });
-
-    return {
-      file,
-      url: config.path,
-      duration: await readVideoDuration(config.path),
-      size: await readRemoteFileSize(config.path),
-      source: "default"
-    };
+    return createDefaultAsset(kind);
   } catch {
     return null;
   }
@@ -984,17 +1001,6 @@ function readVideoDuration(url: string): Promise<string> {
     video.onerror = () => resolve("视频素材");
     video.src = url;
   });
-}
-
-async function readRemoteFileSize(url: string) {
-  try {
-    const response = await fetch(url, { method: "HEAD" });
-    const length = Number(response.headers.get("content-length"));
-    if (Number.isFinite(length) && length > 0) return formatFileSize(length);
-  } catch {
-    // Size is only display metadata; the video can still be used without it.
-  }
-  return "测试素材";
 }
 
 function formatDuration(seconds: number) {
