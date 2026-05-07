@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/
+.env
+.env.local
+node_modules/
+.next/
+dist/
+*.log
+*.tsbuildinfo
+__pycache__/
+*.pyc
+database/*.db
+database/*.db-*
+frontend/.next/
+frontend/node_modules/
+frontend/public/assets/电视剧测试视频.mp4

@@ -1,0 +1,10 @@
+{
+  "name": "adpilot-hackathon",
+  "private": true,
+  "scripts": {
+    "dev": "sh scripts/dev.sh",
+    "dev:frontend": "cd frontend && /Users/liuyujie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p 3000",
+    "dev:backend": "uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000",
+    "build:frontend": "cd frontend && /Users/liuyujie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/next/dist/bin/next build"
+  }
+}
