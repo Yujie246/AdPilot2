@@ -343,7 +343,11 @@ function UploadRow({
         <small>{asset ? `${asset.duration} · ${asset.size}` : `${placeholder}${optional ? "（可选）" : ""}`}</small>
       </div>
       <span className={asset?.source === "upload" ? "asset-tag custom" : "asset-tag"}>{tag}</span>
-      {asset ? <Check size={25} strokeWidth={1.7} /> : <UploadCloud size={24} strokeWidth={1.8} />}
+      {asset ? (
+        <Check className="asset-status-icon" size={25} strokeWidth={1.7} />
+      ) : (
+        <UploadCloud className="asset-status-icon" size={24} strokeWidth={1.8} />
+      )}
     </label>
   );
 }
@@ -441,6 +445,7 @@ function ExperienceCard({
   const [volume, setVolume] = useState(0);
   const [timeState, setTimeState] = useState({ current: 0, duration: 0 });
   const [episodeIndex, setEpisodeIndex] = useState(0);
+  const [adFastForward, setAdFastForward] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const answeredRef = useRef(false);
   const hasPlayback = Boolean(active && dramaSrc && adSrc);
@@ -452,6 +457,7 @@ function ExperienceCard({
     answeredRef.current = false;
     setSelectedOption(null);
     setIsPaused(false);
+    setAdFastForward(false);
     setEpisodeIndex(0);
     setTimeState({ current: 0, duration: 0 });
 
@@ -467,6 +473,7 @@ function ExperienceCard({
     if (ad) {
       ad.pause();
       ad.currentTime = 0;
+      ad.playbackRate = 1;
       ad.volume = volume;
     }
     if (drama) {
@@ -481,6 +488,11 @@ function ExperienceCard({
     if (dramaRef.current) dramaRef.current.volume = volume;
     if (adRef.current) adRef.current.volume = volume;
   }, [volume]);
+
+  useEffect(() => {
+    if (!adRef.current) return;
+    adRef.current.playbackRate = phase === "ad" && adFastForward ? 3 : 1;
+  }, [adFastForward, phase]);
 
   function handleDramaMetadata() {
     if (!hasPlayback || phase !== "drama") return;
@@ -507,10 +519,12 @@ function ExperienceCard({
     const ad = adRef.current;
     setPhase("ad");
     setCardVisible(false);
+    setAdFastForward(false);
     setTimeState({ current: 0, duration: Number.isFinite(ad?.duration) ? ad?.duration || 0 : 0 });
     setIsPaused(false);
     if (ad) {
       ad.currentTime = 0;
+      ad.playbackRate = 1;
       ad.volume = volume;
       void ad.play().catch(() => setIsPaused(true));
     }
@@ -529,11 +543,13 @@ function ExperienceCard({
     setSelectedOption(null);
     setCardVisible(false);
     setPhase("ad");
+    setAdFastForward(false);
     setIsPaused(false);
     setTimeState({ current: 0, duration: ad?.duration || 0 });
 
     if (ad) {
       ad.currentTime = 0;
+      ad.playbackRate = 1;
       ad.volume = volume;
       setTimeState({ current: 0, duration: Number.isFinite(ad.duration) ? ad.duration : 0 });
       void ad.play().catch(() => setIsPaused(true));
@@ -566,12 +582,16 @@ function ExperienceCard({
   function returnToDrama() {
     const drama = dramaRef.current;
     const ad = adRef.current;
-    if (ad) ad.pause();
+    if (ad) {
+      ad.pause();
+      ad.playbackRate = 1;
+    }
     setAnswered(true);
     answeredRef.current = true;
     setCardVisible(false);
     setSelectedOption(null);
     setPhase("returned");
+    setAdFastForward(false);
     setIsPaused(false);
     if (drama) {
       drama.currentTime = getSafeInsertion(drama, insertionSeconds);
@@ -604,6 +624,32 @@ function ExperienceCard({
     setVolume(normalized);
     if (dramaRef.current) dramaRef.current.volume = normalized;
     if (adRef.current) adRef.current.volume = normalized;
+  }
+
+  function seekActiveVideo(nextTime: number) {
+    const video = getActiveVideo();
+    if (!video || !Number.isFinite(nextTime)) return;
+
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : timeState.duration;
+    const boundedTime = Math.min(Math.max(0, nextTime), Math.max(0, duration || nextTime));
+
+    if (phase === "drama") {
+      const safeInsertion = getSafeInsertion(video, insertionSeconds);
+      if (boundedTime >= safeInsertion - 0.08) {
+        video.currentTime = safeInsertion;
+        setTimeState({ current: safeInsertion, duration: duration || 0 });
+        switchToAd();
+        return;
+      }
+    }
+
+    video.currentTime = boundedTime;
+    setTimeState({ current: boundedTime, duration: duration || 0 });
+  }
+
+  function toggleAdFastForward() {
+    if (phase !== "ad") return;
+    setAdFastForward((enabled) => !enabled);
   }
 
   return (
@@ -674,6 +720,9 @@ function ExperienceCard({
               ) : null}
               <MediaControls
                 isPaused={isPaused}
+                adFastForward={adFastForward}
+                onSeek={seekActiveVideo}
+                onToggleAdFastForward={toggleAdFastForward}
                 onTogglePlayback={togglePlayback}
                 onVolumeChange={updateVolume}
                 phase={phase}
@@ -708,26 +757,43 @@ function ExperienceCard({
 }
 
 function MediaControls({
+  adFastForward,
   isPaused,
+  onSeek,
+  onToggleAdFastForward,
   onTogglePlayback,
   onVolumeChange,
   phase,
   timeState,
   volume
 }: {
+  adFastForward: boolean;
   isPaused: boolean;
+  onSeek: (time: number) => void;
+  onToggleAdFastForward: () => void;
   onTogglePlayback: () => void;
   onVolumeChange: (volume: number) => void;
   phase: "waiting" | "drama" | "ad" | "returned";
   timeState: { current: number; duration: number };
   volume: number;
 }) {
-  const progress = timeState.duration ? Math.min(96, Math.max(0, (timeState.current / timeState.duration) * 100)) : 54;
+  const duration = Number.isFinite(timeState.duration) && timeState.duration > 0 ? timeState.duration : 0;
+  const progress = duration ? Math.min(100, Math.max(0, (timeState.current / duration) * 100)) : 0;
   return (
     <div className="product-media-controls">
       <div className="media-progress">
         <span style={{ width: `${progress}%` }} />
         <i style={{ left: `${progress}%` }} />
+        <input
+          aria-label="视频进度"
+          disabled={!duration}
+          max={duration || 0}
+          min="0"
+          onChange={(event) => onSeek(Number(event.target.value))}
+          step="0.1"
+          type="range"
+          value={duration ? Math.min(timeState.current, duration) : 0}
+        />
       </div>
       <div className="media-control-row">
         <div>
@@ -751,6 +817,16 @@ function MediaControls({
           <span>
             {phase === "ad" ? "广告" : "正片"} {formatMediaClock(timeState.current)} / {formatMediaClock(timeState.duration)}
           </span>
+          {phase === "ad" ? (
+            <button
+              aria-pressed={adFastForward}
+              className={adFastForward ? "speed-button active" : "speed-button"}
+              onClick={onToggleAdFastForward}
+              type="button"
+            >
+              3X
+            </button>
+          ) : null}
         </div>
         <div>
           <Settings size={19} strokeWidth={2.2} />

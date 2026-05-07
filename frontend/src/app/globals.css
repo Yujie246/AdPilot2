@@ -759,11 +759,11 @@ button {
 .asset-row {
   position: relative;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 28px;
+  grid-template-columns: 48px minmax(0, 1fr);
   gap: 14px;
   align-items: center;
   min-height: 82px;
-  padding: 12px 126px 12px 14px;
+  padding: 12px 150px 12px 14px;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
@@ -788,13 +788,16 @@ button {
   display: none;
 }
 
-.asset-row > svg {
-  justify-self: end;
-  color: #5fe345;
-}
-
 .asset-row > div {
   min-width: 0;
+}
+
+.asset-status-icon {
+  position: absolute;
+  top: 50%;
+  right: 19px;
+  color: #5fe345;
+  transform: translateY(-50%);
 }
 
 .asset-icon {
@@ -842,7 +845,7 @@ button {
 .asset-tag {
   position: absolute;
   top: 50%;
-  right: 58px;
+  right: 62px;
   display: inline-grid;
   min-width: 74px;
   height: 28px;
@@ -1237,17 +1240,29 @@ button {
 
 .media-progress {
   position: relative;
-  height: 3px;
+  height: 12px;
   margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.media-progress::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
   background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-50%);
 }
 
 .media-progress span {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 50%;
+  height: 3px;
   left: 0;
   background: #ffc13f;
+  transform: translateY(-50%);
 }
 
 .media-progress i {
@@ -1259,6 +1274,20 @@ button {
   background: #ffc13f;
   border-radius: 50%;
   transform: translate(-50%, -50%);
+}
+
+.media-progress input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.media-progress input[type="range"]:disabled {
+  cursor: not-allowed;
 }
 
 .media-control-row {
@@ -1289,6 +1318,25 @@ button {
   cursor: pointer;
   border: 0;
   background: transparent;
+}
+
+.media-control-row .speed-button {
+  width: auto;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 9px;
+  color: #ffd36b;
+  font-size: 12px;
+  font-weight: 760;
+  border: 1px solid rgba(255, 195, 63, 0.48);
+  border-radius: 999px;
+  background: rgba(255, 193, 63, 0.08);
+}
+
+.media-control-row .speed-button.active {
+  color: #171106;
+  border-color: rgba(255, 211, 107, 0.88);
+  background: linear-gradient(135deg, #ffe39b, #f1a32e);
 }
 
 .media-control-row input[type="range"] {
@@ -3597,8 +3645,7 @@ button {
   }
 
   .asset-row {
-    grid-template-columns: 48px minmax(0, 1fr) 28px;
-    padding-right: 14px;
+    padding-right: 56px;
   }
 
   .asset-tag {
@@ -3607,6 +3654,10 @@ button {
     justify-self: start;
     margin-top: -4px;
     transform: none;
+  }
+
+  .asset-status-icon {
+    right: 14px;
   }
 
   .analysis-metrics {
