@@ -83,5 +83,64 @@ export async function runProductAnalysis(payload: ProductAnalysisRequest): Promi
     throw new Error(message || "product analysis request failed");
   }
 
-  return (await response.json()) as ProductAnalysisResponse;
+  return normalizeProductAnalysis((await response.json()) as ProductAnalysisResponse, payload);
+}
+
+function normalizeProductAnalysis(response: ProductAnalysisResponse, request: ProductAnalysisRequest): ProductAnalysisResponse {
+  return {
+    ...response,
+    insertion_time: safeInsertionTime(response.insertion_time, request.drama_duration)
+  };
+}
+
+function safeInsertionTime(insertionTime: string, dramaDuration: string) {
+  const durationSeconds = parseDurationSeconds(dramaDuration);
+  const insertionSeconds = parseDurationSeconds(insertionTime);
+
+  if (durationSeconds === null) return insertionTime;
+  const latestAllowed = latestAllowedInsertionSecond(durationSeconds);
+
+  if (insertionSeconds === null) return formatClock(defaultInsertionSecond(durationSeconds));
+  if (insertionSeconds > latestAllowed) return formatClock(latestAllowed);
+  return formatClock(insertionSeconds);
+}
+
+function latestAllowedInsertionSecond(durationSeconds: number) {
+  if (durationSeconds > 135) return Math.max(15, durationSeconds - 121);
+  return Math.max(0, Math.min(Math.floor(durationSeconds / 2), durationSeconds - 1));
+}
+
+function defaultInsertionSecond(durationSeconds: number) {
+  return Math.min(latestAllowedInsertionSecond(durationSeconds), Math.max(15, Math.round(durationSeconds * 0.45)));
+}
+
+function parseDurationSeconds(value: string) {
+  const text = value.trim();
+  if (!text) return null;
+
+  if (/^\d+$/.test(text)) return Number(text);
+
+  const clockParts = text.split(":");
+  if (clockParts.length >= 2 && clockParts.length <= 3 && clockParts.every((part) => /^\d+$/.test(part.trim()))) {
+    const parts = clockParts.map((part) => Number(part.trim()));
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  const match = text.match(/^(?:(\d+)\s*(?:小时|时|h))?\s*(?:(\d+)\s*(?:分钟|分|m))?\s*(?:(\d+)\s*(?:秒|s))?$/i);
+  if (!match || !match.slice(1).some(Boolean)) return null;
+
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function formatClock(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  if (hours) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
