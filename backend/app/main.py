@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -11,6 +12,9 @@ from pydantic import BaseModel, Field
 from ai_layer.qwen_client import QwenClient
 from database.store import interaction_count, record_interaction, save_report
 
+
+LAST_TWO_MINUTES_SECONDS = 120
+MIN_INSERTION_SECONDS = 15
 
 app = FastAPI(title="AdPilot API", version="0.1.0")
 cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX") or None
@@ -75,13 +79,15 @@ async def product_analysis(data: ProductAnalysisIn) -> dict[str, object]:
     if not qwen.configured:
         return _normalize_product_analysis(_product_analysis_payload(data), data, source="mock")
 
+    insertion_limit = _insertion_limit_text(data.drama_duration)
     prompt = f"""
 你是 AdPilot 剧中互动广告分析模型。基于用户上传素材生成产品页结果。
 素材：剧集《{data.drama_file}》时长{data.drama_duration}大小{data.drama_size}；广告《{data.ad_file}》时长{data.ad_duration}大小{data.ad_size}；品牌/主题：{data.ad_brand}。
 任务：给出合理插入点、互动问题、传统广告痛点、AdPilot 优势。只能根据文件信息谨慎推断。
+插入点限制：{insertion_limit}
 只输出 JSON：
 {{"insertion_time":"25:36","recommended_ad":"{data.ad_brand}","match_score":92,"reasons":["理由1","理由2","理由3"],"question":"问题","options":["选项1","选项2"],"pain_points":["痛点1","痛点2","痛点3"],"advantages":["优势1","优势2","优势3"]}}
-要求：pain_points 必须包含“开 3X 倍速需要手一直按着”的体验痛点；pain_points 和 advantages 每条 18-26 个汉字，适合前端单行展示；语言要像产品展示文案，不要像短标签；match_score 为0-100整数；不要 Markdown。
+要求：insertion_time 必须早于剧集总时长的最后两分钟，不能选择片尾、结尾字幕或最后两分钟内的时间点；pain_points 必须包含“开 3X 倍速需要手一直按着”的体验痛点；pain_points 和 advantages 每条 18-26 个汉字，适合前端单行展示；语言要像产品展示文案，不要像短标签；match_score 为0-100整数；不要 Markdown。
 """
     try:
         parsed = await qwen.required_json_completion(prompt)
@@ -198,7 +204,7 @@ def _product_analysis_payload(data: ProductAnalysisIn | None = None) -> dict[str
 
 def _normalize_product_analysis(payload: dict[str, object], data: ProductAnalysisIn, source: str = "qwen") -> dict[str, object]:
     return {
-        "insertion_time": _string_value(payload.get("insertion_time"), "25:36"),
+        "insertion_time": _safe_insertion_time(payload.get("insertion_time"), data.drama_duration),
         "recommended_ad": _string_value(payload.get("recommended_ad"), data.ad_brand),
         "match_score": _score_value(payload.get("match_score"), 88),
         "reasons": _string_list(payload.get("reasons"), ["素材节奏适合", "不打断主线", "互动问题清晰"]),
@@ -214,6 +220,94 @@ def _string_value(value: object, fallback: str) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return fallback
+
+
+def _safe_insertion_time(value: object, drama_duration: str) -> str:
+    raw_time = _string_value(value, "25:36")
+    duration_seconds = _parse_duration_seconds(drama_duration)
+    insertion_seconds = _parse_duration_seconds(raw_time)
+
+    if duration_seconds is None:
+        return raw_time
+
+    if insertion_seconds is None:
+        return _format_clock(_default_insertion_seconds(duration_seconds))
+
+    max_allowed_seconds = _max_allowed_insertion_seconds(duration_seconds)
+    if insertion_seconds > max_allowed_seconds:
+        insertion_seconds = max_allowed_seconds
+
+    return _format_clock(insertion_seconds)
+
+
+def _insertion_limit_text(drama_duration: str) -> str:
+    duration_seconds = _parse_duration_seconds(drama_duration)
+    if duration_seconds is None:
+        return "insertion_time 不能选择片尾、结尾字幕或最后两分钟内的时间点。"
+
+    latest_allowed = _format_clock(_max_allowed_insertion_seconds(duration_seconds))
+    return f"剧集总时长为 {_format_clock(duration_seconds)}，insertion_time 必须不晚于 {latest_allowed}，不要落入最后两分钟。"
+
+
+def _max_allowed_insertion_seconds(duration_seconds: int) -> int:
+    if duration_seconds > LAST_TWO_MINUTES_SECONDS + MIN_INSERTION_SECONDS:
+        return max(MIN_INSERTION_SECONDS, duration_seconds - LAST_TWO_MINUTES_SECONDS - 1)
+    return max(0, min(duration_seconds // 2, duration_seconds - 1))
+
+
+def _default_insertion_seconds(duration_seconds: int) -> int:
+    max_allowed_seconds = _max_allowed_insertion_seconds(duration_seconds)
+    preferred_seconds = round(duration_seconds * 0.45)
+    return min(max(MIN_INSERTION_SECONDS, preferred_seconds), max_allowed_seconds)
+
+
+def _parse_duration_seconds(value: object) -> int | None:
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, float) and value >= 0:
+        return round(value)
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text or text in {"未知", "视频素材", "未上传"}:
+        return None
+
+    if text.isdigit():
+        return int(text)
+
+    clock_parts = text.split(":")
+    if 2 <= len(clock_parts) <= 3 and all(part.strip().isdigit() for part in clock_parts):
+        numbers = [int(part.strip()) for part in clock_parts]
+        if len(numbers) == 2:
+            minutes, seconds = numbers
+            return minutes * 60 + seconds
+        hours, minutes, seconds = numbers
+        return hours * 3600 + minutes * 60 + seconds
+
+    match = re.fullmatch(
+        r"(?:(?P<hours>\d+)\s*(?:小时|时|h))?\s*"
+        r"(?:(?P<minutes>\d+)\s*(?:分钟|分|m))?\s*"
+        r"(?:(?P<seconds>\d+)\s*(?:秒|s))?",
+        text,
+        flags=re.IGNORECASE
+    )
+    if not match or not any(match.groupdict().values()):
+        return None
+
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes") or 0)
+    seconds = int(match.group("seconds") or 0)
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _format_clock(seconds: int) -> str:
+    seconds = max(0, seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def _score_value(value: object, fallback: int) -> int:
