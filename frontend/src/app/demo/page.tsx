@@ -31,6 +31,7 @@ type UploadedAsset = {
   url: string;
   duration: string;
   size: string;
+  source: "default" | "upload";
 };
 
 type DemoAssetKind = "drama" | "adVideo";
@@ -54,6 +55,21 @@ const DEMO_DB_NAME = "adpilot-demo-assets";
 const DEMO_STORE_NAME = "uploads";
 const DEMO_BRAND_KEY = "adpilot-demo-brand";
 const memoryUploads: Partial<Record<DemoAssetKind, StoredAsset>> = {};
+
+const defaultDemoAssets: Record<DemoAssetKind, { fileName: string; label: string; path: string; type: string }> = {
+  drama: {
+    fileName: "电视剧测试视频.mp4",
+    label: "测试视频",
+    path: "/assets/电视剧测试视频.mp4",
+    type: "video/mp4"
+  },
+  adVideo: {
+    fileName: "广告测试视频.mp4",
+    label: "测试广告",
+    path: "/assets/广告测试视频.mp4",
+    type: "video/mp4"
+  }
+};
 
 const productSteps: Array<{ step: string; icon: LucideIcon; label: string }> = [
   { step: "1", icon: UploadCloud, label: "上传剧集与广告" },
@@ -102,13 +118,13 @@ export default function DemoPage() {
 
     async function restoreUploads() {
       const [storedDrama, storedAdVideo] = await Promise.all([
-        loadRememberedAsset("drama"),
-        loadRememberedAsset("adVideo")
+        loadRememberedAsset("drama").then((asset) => asset ?? loadDefaultAsset("drama")),
+        loadRememberedAsset("adVideo").then((asset) => asset ?? loadDefaultAsset("adVideo"))
       ]);
 
       if (!active) {
-        if (storedDrama?.url) URL.revokeObjectURL(storedDrama.url);
-        if (storedAdVideo?.url) URL.revokeObjectURL(storedAdVideo.url);
+        revokeAssetUrl(storedDrama);
+        revokeAssetUrl(storedAdVideo);
         return;
       }
 
@@ -124,11 +140,11 @@ export default function DemoPage() {
   }, []);
 
   useEffect(() => () => {
-    if (drama?.url) URL.revokeObjectURL(drama.url);
+    revokeAssetUrl(drama);
   }, [drama?.url]);
 
   useEffect(() => () => {
-    if (adVideo?.url) URL.revokeObjectURL(adVideo.url);
+    revokeAssetUrl(adVideo);
   }, [adVideo?.url]);
 
   async function handleUpload(kind: "drama" | "adVideo", file: File | null) {
@@ -206,6 +222,7 @@ export default function DemoPage() {
                 label="剧集文件"
                 onChange={(file) => handleUpload("drama", file)}
                 placeholder="选择电视剧源文件"
+                tag={assetTag("drama", drama)}
               />
               <UploadRow
                 accept="video/*"
@@ -214,6 +231,7 @@ export default function DemoPage() {
                 label="广告视频"
                 onChange={(file) => handleUpload("adVideo", file)}
                 placeholder="选择广告源文件"
+                tag={assetTag("adVideo", adVideo)}
               />
             </div>
             <label className="brand-field">
@@ -301,7 +319,8 @@ function UploadRow({
   label,
   onChange,
   optional = false,
-  placeholder
+  placeholder,
+  tag
 }: {
   accept: string;
   asset: UploadedAsset | null;
@@ -310,6 +329,7 @@ function UploadRow({
   onChange: (file: File | null) => void;
   optional?: boolean;
   placeholder: string;
+  tag: string;
 }) {
   const inputId = useMemo(() => `upload-${label}-${Math.random().toString(36).slice(2)}`, [label]);
   return (
@@ -322,6 +342,7 @@ function UploadRow({
         <strong>{asset ? asset.file.name : label}</strong>
         <small>{asset ? `${asset.duration} · ${asset.size}` : `${placeholder}${optional ? "（可选）" : ""}`}</small>
       </div>
+      <span className={asset?.source === "upload" ? "asset-tag custom" : "asset-tag"}>{tag}</span>
       {asset ? <Check size={25} strokeWidth={1.7} /> : <UploadCloud size={24} strokeWidth={1.8} />}
     </label>
   );
@@ -747,13 +768,38 @@ async function buildAsset(file: File): Promise<UploadedAsset> {
     file,
     url,
     duration,
-    size: formatFileSize(file.size)
+    size: formatFileSize(file.size),
+    source: "upload"
   };
 }
 
+async function loadDefaultAsset(kind: DemoAssetKind): Promise<UploadedAsset | null> {
+  try {
+    const config = defaultDemoAssets[kind];
+    const file = new File([], config.fileName, {
+      type: config.type,
+      lastModified: Date.now()
+    });
+
+    return {
+      file,
+      url: config.path,
+      duration: await readVideoDuration(config.path),
+      size: await readRemoteFileSize(config.path),
+      source: "default"
+    };
+  } catch {
+    return null;
+  }
+}
+
 function replaceAsset(previous: UploadedAsset | null, next: UploadedAsset) {
-  if (previous?.url) URL.revokeObjectURL(previous.url);
+  revokeAssetUrl(previous);
   return next;
+}
+
+function revokeAssetUrl(asset: UploadedAsset | null) {
+  if (asset?.source === "upload" && asset.url) URL.revokeObjectURL(asset.url);
 }
 
 function openDemoDatabase(): Promise<IDBDatabase> {
@@ -811,7 +857,8 @@ async function createUploadedAsset(stored: StoredAsset): Promise<UploadedAsset> 
     file,
     url,
     duration: stored.duration || (await readVideoDuration(url)),
-    size: stored.size || formatFileSize(file.size)
+    size: stored.size || formatFileSize(file.size),
+    source: "upload"
   };
 }
 
@@ -863,6 +910,17 @@ function readVideoDuration(url: string): Promise<string> {
   });
 }
 
+async function readRemoteFileSize(url: string) {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    const length = Number(response.headers.get("content-length"));
+    if (Number.isFinite(length) && length > 0) return formatFileSize(length);
+  } catch {
+    // Size is only display metadata; the video can still be used without it.
+  }
+  return "测试素材";
+}
+
 function formatDuration(seconds: number) {
   if (!seconds) return "视频素材";
   const minute = Math.floor(seconds / 60);
@@ -885,6 +943,11 @@ function formatFileSize(bytes: number) {
 function inferBrand(adFile?: string) {
   const name = adFile || "上传广告素材";
   return name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ");
+}
+
+function assetTag(kind: DemoAssetKind, asset: UploadedAsset | null) {
+  if (!asset || asset.source === "default") return defaultDemoAssets[kind].label;
+  return kind === "drama" ? "自选视频" : "自选广告";
 }
 
 function buildSideCopy(tone: "traditional" | "adpilot", items: string[]) {
