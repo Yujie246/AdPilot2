@@ -47,8 +47,20 @@ type StoredAsset = {
 };
 
 type InteractionPrompt = {
+  kind: "quiz" | "poll" | "test" | "rating";
+  label: string;
+  completion: "skip" | "points" | "coupon";
   question: string;
-  options: [string, string];
+  options?: string[];
+  feedback: string;
+  helper: string;
+  defaultRating?: number;
+};
+
+type InteractionReward = {
+  kind: "points" | "coupon";
+  title: string;
+  desc: string;
 };
 
 const DEMO_DB_NAME = "adpilot-demo-assets";
@@ -86,21 +98,42 @@ const productSteps: Array<{ step: string; icon: LucideIcon; label: string }> = [
 ];
 
 const jindianInteractionPrompts: InteractionPrompt[] = [
-  { question: "第一杯奶通常在哪喝？", options: ["早餐桌", "通勤路上"] },
-  { question: "奶香你站哪一派？", options: ["清爽顺口", "浓醇满足"] },
-  { question: "这瓶奶更像给谁准备的？", options: ["给自己撑一天", "给家人多一点安心"] },
-  { question: "家里买奶，谁更有发言权？", options: ["我来把关", "家人爱喝才算"] },
-  { question: "看到“0.09 秒”，你第一反应是？", options: ["工艺挺硬核", "听起来很新鲜"] },
-  { question: "看到牧场画面，你会先看？", options: ["奶源靠不靠谱", "环境干不干净"] },
-  { question: "有机奶最该证明什么？", options: ["认证可信", "奶源可追"] },
-  { question: "你更愿意为哪点多花钱？", options: ["真有认证", "真好喝"] },
-  { question: "这支广告你记住了什么？", options: ["0.09 秒杀菌", "超超超好喝"] },
-  { question: "买奶你更像哪种人？", options: ["固定买一款", "看到新品会试"] },
-  { question: "家里有人说“随便买”，你会？", options: ["还是买好点", "看哪个便宜"] },
-  { question: "冰箱里的奶，你希望它？", options: ["随时都有", "喝完再买"] },
-  { question: "试饮机会给你，你会？", options: ["自己先喝", "带回家一起试"] },
-  { question: "下次想在哪遇到它？", options: ["超市货架", "外卖/电商"] },
-  { question: "它最适合进哪份清单？", options: ["早餐常备", "家庭囤货"] }
+  {
+    kind: "quiz",
+    label: "知识问答",
+    completion: "skip",
+    question: "金典有机奶奶源来自哪里？",
+    options: ["呼伦贝尔有机牧场", "普通城市牧场"],
+    feedback: "87% 用户选对了",
+    helper: "答对显示品牌知识"
+  },
+  {
+    kind: "poll",
+    label: "偏好投票",
+    completion: "skip",
+    question: "你最看重有机奶哪个特点？",
+    options: ["零农药残留", "原生高钙", "全程可追溯"],
+    feedback: "实时显示分布",
+    helper: "参与品牌决策"
+  },
+  {
+    kind: "test",
+    label: "趣味测试",
+    completion: "points",
+    question: "测测你的有机生活指数",
+    options: ["早餐常备", "运动补给", "家庭囤货"],
+    feedback: "有机达人 · 推荐家庭装",
+    helper: "生成生活方式标签"
+  },
+  {
+    kind: "rating",
+    label: "滑动打分",
+    completion: "coupon",
+    question: "这个新包装打几分？",
+    feedback: "平均 7.8，你偏高",
+    helper: "新品接受度量化",
+    defaultRating: 8
+  }
 ];
 
 export default function DemoPage() {
@@ -463,7 +496,10 @@ function ExperienceCard({
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [adFastForward, setAdFastForward] = useState(false);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [ratingValue, setRatingValue] = useState(8);
+  const [reward, setReward] = useState<InteractionReward | null>(null);
   const answeredRef = useRef(false);
+  const rewardTimerRef = useRef<number | null>(null);
   const hasPlayback = Boolean(active && dramaSrc && adSrc);
   const interactionPrompt = buildInteractionPrompt(brand, question, options, episodeIndex);
 
@@ -472,6 +508,8 @@ function ExperienceCard({
     setAnswered(false);
     answeredRef.current = false;
     setSelectedOption(null);
+    setRatingValue(8);
+    clearReward();
     setIsPaused(false);
     setAdFastForward(false);
     setEpisodeIndex(0);
@@ -510,6 +548,14 @@ function ExperienceCard({
     adRef.current.playbackRate = phase === "ad" && adFastForward ? 3 : 1;
   }, [adFastForward, phase]);
 
+  useEffect(() => {
+    setRatingValue(interactionPrompt.defaultRating ?? 8);
+  }, [interactionPrompt.kind, interactionPrompt.defaultRating]);
+
+  useEffect(() => () => {
+    if (rewardTimerRef.current) window.clearTimeout(rewardTimerRef.current);
+  }, []);
+
   function handleDramaMetadata() {
     if (!hasPlayback || phase !== "drama") return;
     const drama = dramaRef.current;
@@ -535,6 +581,7 @@ function ExperienceCard({
     const ad = adRef.current;
     setPhase("ad");
     setCardVisible(false);
+    clearReward();
     setAdFastForward(false);
     setTimeState({ current: 0, duration: Number.isFinite(ad?.duration) ? ad?.duration || 0 : 0 });
     setIsPaused(false);
@@ -553,10 +600,12 @@ function ExperienceCard({
     const ad = adRef.current;
     if (drama) drama.pause();
 
-    setEpisodeIndex((index) => index + 1);
+    setEpisodeIndex((index) => (index + 1) % jindianInteractionPrompts.length);
     setAnswered(false);
     answeredRef.current = false;
     setSelectedOption(null);
+    setRatingValue(8);
+    clearReward();
     setCardVisible(false);
     setPhase("ad");
     setAdFastForward(false);
@@ -589,10 +638,18 @@ function ExperienceCard({
     }
   }
 
-  function chooseInteractionOption(option: string) {
-    setSelectedOption(option);
+  function completeInteraction(selection: string) {
+    if (answeredRef.current) return;
+    setSelectedOption(selection);
     answeredRef.current = true;
-    window.setTimeout(returnToDrama, 80);
+    if (interactionPrompt.completion === "skip") {
+      window.setTimeout(returnToDrama, 650);
+      return;
+    }
+
+    setAnswered(true);
+    setCardVisible(false);
+    showReward(buildInteractionReward(interactionPrompt.completion));
   }
 
   function returnToDrama() {
@@ -605,6 +662,7 @@ function ExperienceCard({
     setAnswered(true);
     answeredRef.current = true;
     setCardVisible(false);
+    clearReward();
     setSelectedOption(null);
     setPhase("returned");
     setAdFastForward(false);
@@ -668,6 +726,23 @@ function ExperienceCard({
     setAdFastForward((enabled) => !enabled);
   }
 
+  function clearReward() {
+    if (rewardTimerRef.current) {
+      window.clearTimeout(rewardTimerRef.current);
+      rewardTimerRef.current = null;
+    }
+    setReward(null);
+  }
+
+  function showReward(nextReward: InteractionReward) {
+    clearReward();
+    setReward(nextReward);
+    rewardTimerRef.current = window.setTimeout(() => {
+      setReward(null);
+      rewardTimerRef.current = null;
+    }, 3600);
+  }
+
   return (
     <article className={`experience-card ${tone}`}>
       <div className="experience-title">
@@ -711,29 +786,26 @@ function ExperienceCard({
               />
               <div className="segment-chip">{phase === "ad" ? "广告时刻" : "正片片段"}</div>
               {tone === "adpilot" && cardVisible ? (
-                <div className="product-interaction" aria-live="polite">
-                  <div>
-                    <CircleCheck size={13} strokeWidth={2.2} />
-                    完成互动可跳回正片
+                <div className={`product-interaction ${interactionPrompt.kind}`} aria-live="polite">
+                  <p className="interaction-header">
+                    <span>
+                      <CircleCheck size={13} strokeWidth={2.2} />
+                      {interactionPrompt.label}
+                    </span>
                     <b>3s</b>
-                  </div>
+                  </p>
                   <strong>{interactionPrompt.question}</strong>
-                  <span>
-                    {interactionPrompt.options.map((option, index) => (
-                      <button
-                        className={selectedOption === option ? "selected" : ""}
-                        key={option}
-                        onClick={() => chooseInteractionOption(option)}
-                        style={{ fontSize: `${getInteractionOptionFontSize(option)}px` }}
-                        type="button"
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </span>
-                  <small>10s 后自动收起</small>
+                  <InteractionCardBody
+                    onComplete={completeInteraction}
+                    onRatingChange={setRatingValue}
+                    prompt={interactionPrompt}
+                    ratingValue={ratingValue}
+                    selectedOption={selectedOption}
+                  />
+                  <small>{selectedOption ? interactionPrompt.feedback : interactionPrompt.helper}</small>
                 </div>
               ) : null}
+              {tone === "adpilot" && reward ? <InteractionRewardToast reward={reward} /> : null}
               <MediaControls
                 isPaused={isPaused}
                 adFastForward={adFastForward}
@@ -769,6 +841,75 @@ function ExperienceCard({
         </aside>
       </div>
     </article>
+  );
+}
+
+function InteractionCardBody({
+  onComplete,
+  onRatingChange,
+  prompt,
+  ratingValue,
+  selectedOption
+}: {
+  onComplete: (selection: string) => void;
+  onRatingChange: (value: number) => void;
+  prompt: InteractionPrompt;
+  ratingValue: number;
+  selectedOption: string | null;
+}) {
+  if (prompt.kind === "rating") {
+    return (
+      <div className="interaction-rating">
+        <div className="rating-meter">
+          <input
+            aria-label="包装评分"
+            max="10"
+            min="1"
+            onChange={(event) => onRatingChange(Number(event.target.value))}
+            step="1"
+            type="range"
+            value={ratingValue}
+          />
+          <output>{ratingValue} 分</output>
+        </div>
+        <button
+          className={selectedOption ? "selected interaction-submit" : "interaction-submit"}
+          onClick={() => onComplete(`${ratingValue} 分`)}
+          type="button"
+        >
+          提交评分
+        </button>
+      </div>
+    );
+  }
+
+  const options = prompt.options ?? [];
+  return (
+    <span className={`interaction-options ${options.length >= 3 ? "three" : ""}`}>
+      {options.map((option) => (
+        <button
+          className={selectedOption === option ? "selected" : ""}
+          key={option}
+          onClick={() => onComplete(option)}
+          style={{ fontSize: `${getInteractionOptionFontSize(option)}px` }}
+          type="button"
+        >
+          {option}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+function InteractionRewardToast({ reward }: { reward: InteractionReward }) {
+  return (
+    <div className={`interaction-reward ${reward.kind}`} aria-live="polite">
+      <Sparkles size={18} strokeWidth={2} />
+      <div>
+        <strong>{reward.title}</strong>
+        <span>{reward.desc}</span>
+      </div>
+    </div>
   );
 }
 
@@ -1088,6 +1229,22 @@ function getInteractionOptionFontSize(option: string) {
   return 12;
 }
 
+function buildInteractionReward(kind: "points" | "coupon"): InteractionReward {
+  if (kind === "points") {
+    return {
+      kind,
+      title: "+20积分",
+      desc: "积累500积分兑换3天会员"
+    };
+  }
+
+  return {
+    kind,
+    title: "获得满50减10代金券",
+    desc: "已发放至你的品牌权益包"
+  };
+}
+
 function buildInteractionPrompt(brand: string, question: string | undefined, options: string[] | undefined, seed: number) {
   if (brand.includes("金典") || question?.includes("奶")) {
     const index = Math.abs(seed) % jindianInteractionPrompts.length;
@@ -1095,11 +1252,47 @@ function buildInteractionPrompt(brand: string, question: string | undefined, opt
   }
 
   const fallbackOptions = options?.slice(0, 2);
-  return {
-    question: question || `你更看重${brand}的哪种特质？`,
-    options:
-      fallbackOptions?.length === 2
-        ? [fallbackOptions[0], fallbackOptions[1]]
-        : ["安心品质", "更好口感"]
-  } satisfies InteractionPrompt;
+  const fallbackCycle: InteractionPrompt[] = [
+    {
+      kind: "quiz",
+      label: "知识问答",
+      completion: "skip",
+      question: question || `${brand}最核心的卖点是什么？`,
+      options:
+        fallbackOptions?.length === 2
+          ? [fallbackOptions[0], fallbackOptions[1]]
+          : ["安心品质", "更好口感"],
+      feedback: "87% 用户选对了",
+      helper: "答对显示品牌知识"
+    },
+    {
+      kind: "poll",
+      label: "偏好投票",
+      completion: "skip",
+      question: `你最看重${brand}哪个特点？`,
+      options: ["品质稳定", "价格合适", "使用方便"],
+      feedback: "实时显示分布",
+      helper: "参与品牌决策"
+    },
+    {
+      kind: "test",
+      label: "趣味测试",
+      completion: "points",
+      question: `测测你的${brand}偏好指数`,
+      options: ["品质派", "效率派", "尝鲜派"],
+      feedback: "高兴趣用户 · 推荐新品",
+      helper: "生成生活方式标签"
+    },
+    {
+      kind: "rating",
+      label: "滑动打分",
+      completion: "coupon",
+      question: "这个新包装打几分？",
+      feedback: "平均 7.8，你偏高",
+      helper: "新品接受度量化",
+      defaultRating: 8
+    }
+  ];
+
+  return fallbackCycle[Math.abs(seed) % fallbackCycle.length];
 }

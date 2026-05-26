@@ -91,7 +91,7 @@ export const questionInsights = [
 ];
 
 export const productPillars: Array<{ side: string; title: string; desc: string; icon: LucideIcon }> = [
-  { side: "用户侧", title: "少等广告", desc: "3s轻互动后，精准跳回正片。", icon: Users },
+  { side: "用户侧", title: "3s轻互动", desc: "用户愿意参与的价值交换。", icon: Users },
   { side: "广告侧", title: "真实反馈", desc: "了解用户主动表达的喜好", icon: MessageCircleQuestion },
   {
     side: "平台侧",

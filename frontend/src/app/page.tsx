@@ -19,7 +19,7 @@ export default function Home() {
           <h1 className="hero-title">
             <span className="hero-title-line">剧中广告的新形态：</span>
             <br />
-            <span className="gold-text">互动换时间</span>
+            <span className="gold-text">让广告被回应</span>
           </h1>
           <p className="muted-lead">
             AdPilot 将剧中广告升级为可互动广告：用户完成 3s轻互动，即可提前结束剧中广告，精准回到正片。
